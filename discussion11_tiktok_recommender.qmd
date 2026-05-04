@@ -1,0 +1,98 @@
+---
+title: "Discussion 11 — Analyzing TikTok's 'For You' Recommender"
+author: "cHINGIZ rABDANOV"
+date: "2026-05-03"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+  gfm: default
+---
+
+## Why TikTok?
+
+TikTok's For You Page (FYP) is arguably the most influential recommender deployed
+in the past decade. Unlike Amazon (item-to-item collaborative filtering) or the
+NYT (collaborative topic modeling over articles), TikTok built its product
+*around* the recommender — there is no meaningful homepage without it. That
+makes it an unusually clean object of study.
+
+## Scenario Design — Two Lenses
+
+Temkin's framework asks three questions: **Who are the users? What are their
+key goals? How can we help them accomplish those goals?** TikTok genuinely has
+two distinct customer sets, so the analysis is run twice.
+
+### Lens 1 — The end user (viewer / creator)
+
+| Question | Viewer | Creator |
+|---|---|---|
+| Who? | A scroller opening the app for entertainment, often <30s of attention | Someone posting short video hoping to be seen |
+| Key goal? | "Show me something I'll enjoy *right now*, with no work from me" | Reach the right audience without needing followers |
+| How does the system help? | Cold-start onboarding asks for interest categories; every swipe is an implicit label that retrains the feed continuously | An "interest graph" instead of a social graph means a brand-new account can go viral if early viewers complete the video |
+
+### Lens 2 — TikTok / ByteDance the organization
+
+| Question | Answer |
+|---|---|
+| Who is the "user"? | The platform itself, plus advertisers buying against attention |
+| Key goal? | Maximize session length and retention, which compounds into ad inventory and creator supply |
+| How does the system help? | A real-time training loop (see *Monolith*, below) lets the model chase trends within hours instead of days, keeping the feed feeling "fresh" |
+
+The two lenses are not always aligned — the platform's optimization for watch
+time can pull against the viewer's stated goal of "time well spent." This is
+the central tension I return to in my recommendations.
+
+## Reverse-Engineering the System
+
+Combining TikTok's own [Newsroom post](https://newsroom.tiktok.com/en-us/how-tiktok-recommends-videos-for-you)
+with the publicly released *Monolith* paper ([Liu et al., 2022](https://arxiv.org/pdf/2209.07663))
+and reporting on the WSJ "TikTok investigation," the pipeline appears to be:
+
+1. **Candidate generation.** Filter the catalog down to videos matching the
+   viewer's interest embeddings, language, and region. Follower count is
+   explicitly *not* a ranking signal.
+2. **Prediction.** For each candidate, predict probabilities of like, share,
+   comment, follow, *and* — most heavily — completion / rewatch. Watch-time on
+   the first ~3 seconds is the dominant early signal.
+3. **Ranking.** Combine predictions into a single score; demote near-duplicates
+   and back-to-back same-creator/same-sound videos to preserve diversity.
+4. **Online training.** Unlike a typical batch system, *Monolith* updates
+   embeddings in near real-time using a collisionless hash table (cuckoo
+   hashing) with expirable, frequency-filtered entries. This is what makes the
+   FYP feel like it "knows you" within ~20 swipes.
+
+Compared to Amazon's item-to-item CF (Linden et al., 2003), TikTok inverts the
+problem: Amazon assumed sparse but stable preferences, while TikTok assumes
+dense, *non-stationary* preferences ("concept drift") and engineers around it.
+
+## Recommendations to Improve the System
+
+1. **Expose a "why am I seeing this?" panel with editable signals.** Today the
+   only viewer-facing controls are *Not Interested* and *Refresh Feed*. Letting
+   users see and remove the top contributing signals (e.g., "you watched 3
+   skincare videos to completion last Tuesday") would address well-documented
+   "rabbit hole" complaints without sacrificing personalization.
+2. **Introduce a satiation penalty separate from diversity.** The current
+   diversity layer prevents *back-to-back* repetition but not *session-level*
+   over-fit. A user who watched 40 minutes of one topic should see the
+   recommender's confidence in that topic decay, not compound.
+3. **Treat creators as a second optimization target, not just a supply.**
+   Surfacing newer creators with high completion rates earlier in their
+   distribution curve would diversify the supply side and reduce the platform's
+   dependence on a small group of mega-creators — a known fragility for
+   ad-supported platforms.
+4. **Add an explicit "long-form interest" signal.** TikTok now hosts videos up
+   to 10 minutes, but the ranking model is still anchored to short-video
+   completion behavior. A separate head predicting long-form completion would
+   let the system grow into YouTube-adjacent use cases without retraining the
+   primary objective.
+
+## Sources
+
+- TikTok Newsroom, "How TikTok recommends videos #ForYou."
+- Liu, Z. et al. (2022). *Monolith: Real Time Recommendation System With Collisionless Embedding Table.* ORSUM @ ACM RecSys.
+- Linden, Smith, & York (2003). *Amazon.com Recommendations: Item-to-Item Collaborative Filtering.* IEEE Internet Computing.
+- Spangher (2015). *Building the Next New York Times Recommendation Engine.*
+- Cotter, K. (2026). "TikTok's new owner puts app's algorithm in the spotlight," *The Conversation.*
